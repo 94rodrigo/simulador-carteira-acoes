@@ -1,19 +1,11 @@
 import { useState, useEffect, type JSX } from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-} from "recharts";
 import axios from "axios";
 import Card from "./components/Card";
 import CardContent from "./components/CardContent";
 import Button from "./components/Button";
 import Input from "./components/Input";
 import LineChartHistorico from "./components/LineChartHistorico";
-
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#845EC2"];
+import PieChartCarteira from "./components/PieChartCarteira";
 
 type Ativo = {
   ticker: string;
@@ -137,7 +129,6 @@ export default function CarteiraSimulador(): JSX.Element {
   function calcularHistoricoCarteira(): void {
     // Mapeia cada ativo ao seu histórico e percentual
     const ativosComHistorico = ativos.map(ativo => {
-      console.log(historicoStock);
       const historico1 = historicoStock.find(h =>
         h.length > 0 && h[0].stock === ativo.ticker
       );
@@ -164,9 +155,6 @@ export default function CarteiraSimulador(): JSX.Element {
         variacaoPercentual: variacaoPercentual
       }))
       .sort((a, b) => a.date - b.date) as Historico[]);
-    
-      console.log(...historico);
-      
   }
 
   const total: number = ativos.reduce((acc, a) => acc + a.percentual, 0);
@@ -177,22 +165,14 @@ export default function CarteiraSimulador(): JSX.Element {
     // Limpa o historicoStock antes de buscar novos dados
     setHistoricoStock([]);
 
-    const token = "9oTAWCye6fZ1VrnZDfmsnC";
-
-    axios
-      .all(ativos.map((ativo) => axios.get(`https://brapi.dev/api/quote/${ativo.ticker}?range=3mo&interval=1d&token=${token}`)))
-      .then(
-        axios.spread((...responses) => {
-          const allHistoricos: StockInformacoes[][] = responses.map((res, idx) => {
-            const raw = res.data.results[0]?.historicalDataPrice as StockInformacoes[] || [];
-            // Corrige o campo stock para cada item
-            const symbol = res.data.results[0]?.symbol || ativos[idx].ticker;
-            raw.forEach((item) => item.stock = symbol);
-            return raw;
-          });
-          setHistoricoStock(allHistoricos);
-        })
-      )
+    // Envia os ativos para o backend para simulação
+    axios.post("http://localhost:8080/api/simular", ativos)
+      .then((res) => {
+        // Espera que o backend retorne um array de históricos por ativo
+        // Exemplo: { historicoStock: StockInformacoes[][] }
+        const historicoStockBackend = res.data.historicoStock as StockInformacoes[][];
+        setHistoricoStock(historicoStockBackend || []);
+      })
       .catch((err) => console.error("Erro ao buscar histórico: ", err));
   }, [ativos]);
 
@@ -317,44 +297,7 @@ export default function CarteiraSimulador(): JSX.Element {
             <h2 className="text-xl font-semibold mb-4">
               Distribuição da Carteira
             </h2>
-            <PieChart width={400} height={300}>
-              <Pie
-              data={ativos}
-              dataKey="percentual"
-              nameKey="ticker"
-              cx="50%"
-              cy="50%"
-              outerRadius={100}
-              label
-              >
-              {ativos.map((_, index) => (
-                <Cell
-                key={`cell-${index}`}
-                fill={COLORS[index % COLORS.length]}
-                />
-              ))}
-              </Pie>
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                  const { ticker, percentual } = payload[0].payload;
-                  return (
-                    <div className="rounded-xl shadow-lg border border-gray-700 bg-gray-900/90 px-4 py-3 min-w-[160px]">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="block w-3 h-3 rounded-full" style={{ background: payload[0].color }} />
-                      <span className="font-semibold text-white">{ticker}</span>
-                    </div>
-                    <div className="text-blue-400 text-lg font-bold">{percentual}%</div>
-                    <div className="text-xs text-gray-400 mt-1">Percentual da carteira</div>
-                    </div>
-                  );
-                  }
-                  return null;
-                }}
-                wrapperStyle={{ borderRadius: 12, boxShadow: "none" }}
-              />
-              <Legend wrapperStyle={{ color: '#fff' }} />
-            </PieChart>
+            <PieChartCarteira ativos={ativos} />
           </CardContent>
         </Card>
       )}

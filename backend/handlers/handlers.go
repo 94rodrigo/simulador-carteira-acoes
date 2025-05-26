@@ -8,13 +8,14 @@ import (
 	"simulador-carteira-acoes/backend/models"
 )
 
-var token = os.Getenv("BRAPI_TOKEN")
+func getToken() string {
+	return os.Getenv("BRAPI_TOKEN")
+}
 
 // GET /stocklist
 func StockListHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Requisição recebida em /stocklist")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	resp, err := http.Get("https://brapi.dev/api/quote/list?sortBy=name&sortOrder=asc&token=" + token)
+	resp, err := http.Get("https://brapi.dev/api/quote/list?sortBy=name&sortOrder=asc&token=" + getToken())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Erro ao buscar dados da API externa"))
@@ -26,7 +27,7 @@ func StockListHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Crie uma struct temporária para decodificar apenas o campo "stocks"
 	var result struct {
-		Stocks interface{} `json:"stocks"`
+		Stocks any `json:"stocks"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -34,22 +35,58 @@ func StockListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Retorne apenas o array de ações
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"stocks": result.Stocks,
 	})
 }
 
 // POST /simular
 func SimularCarteiraHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	var ativos []models.Ativo
 	if err := json.NewDecoder(r.Body).Decode(&ativos); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("JSON inválido"))
 		return
 	}
-	// Aqui você implementaria a lógica de simulação (mock de resposta)
+	// Para cada ativo, busca o histórico na brapi.dev
+	var historicoStock [][]models.StockInformacoes
+	for _, ativo := range ativos {
+		fmt.Printf("Buscando histórico para o ativo: %s\n", ativo.Ticker)
+		url := "https://brapi.dev/api/quote/" + ativo.Ticker + "?range=3mo&interval=1d&token=" + getToken()
+		fmt.Println("URL da requisição:", url)
+		resp, err := http.Get(url)
+		if err != nil {
+			historicoStock = append(historicoStock, []models.StockInformacoes{})
+			continue
+		}
+		defer resp.Body.Close()
+		var result struct {
+			Results []struct {
+				Symbol              string                    `json:"symbol"`
+				HistoricalDataPrice []models.StockInformacoes `json:"historicalDataPrice"`
+			} `json:"results"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Results) == 0 {
+			historicoStock = append(historicoStock, []models.StockInformacoes{})
+			continue
+		}
+		// Corrige o campo stock para cada item
+		for i := range result.Results[0].HistoricalDataPrice {
+			result.Results[0].HistoricalDataPrice[i].Stock = result.Results[0].Symbol
+		}
+		historicoStock = append(historicoStock, result.Results[0].HistoricalDataPrice)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"historico": []models.Historico{},
+	json.NewEncoder(w).Encode(map[string]any{
+		"historicoStock": historicoStock,
 	})
 }
