@@ -44,7 +44,6 @@ type StockInformacoes = {
 export default function CarteiraSimulador(): JSX.Element {
   const [ativos, setAtivos] = useState<Ativo[]>([]);
   const [inputBlocks, setInputBlocks] = useState([{ ticker: "", percentual: "" }]);
-  const [historico, setHistorico] = useState<Historico[]>([]);
   const [historicoStock, setHistoricoStock] = useState<StockInformacoes[][]>([]);
   const [stockList, setStockList] = useState<StockListItem[]>([]);
   const [autocompleteIdx, setAutocompleteIdx] = useState<number | null>(null);
@@ -54,7 +53,11 @@ export default function CarteiraSimulador(): JSX.Element {
   useEffect(() => {
     // Tenta carregar do localStorage primeiro
     const cached = localStorage.getItem("stockList");
-    if (cached) {
+    const cachedTime = localStorage.getItem("stockList_time");
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    if (cached && cachedTime && now - Number(cachedTime) < oneDay) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
@@ -63,12 +66,13 @@ export default function CarteiraSimulador(): JSX.Element {
         }
       } catch {}
     }
-    // Se não houver cache, faz a requisição
+    // Se não houver cache válido, faz a requisição
     axios.get("http://localhost:8080/api/stocklist")
       .then(res => {
         const stocks = res.data.stocks as StockListItem[] || [];
         setStockList(stocks);
         localStorage.setItem("stockList", JSON.stringify(stocks));
+        localStorage.setItem("stockList_time", now.toString());
       })
       .catch(() => setStockList([]));
   }, []);
@@ -110,12 +114,23 @@ export default function CarteiraSimulador(): JSX.Element {
     return parseFloat(inputBlocks.map(inputValor => parseFloat(inputValor.percentual) || 0).reduce((acc, b) => acc + b, 0).toFixed(2));
   };
 
+  // Função utilitária para formatar timestamp (segundos) para dd/MM/yyyy
+  function formatarData(timestamp: number): string {
+    if (!timestamp) return "";
+    // Se vier em segundos, multiplica por 1000 para converter para ms
+    const date = new Date(timestamp * 1000);
+    const dia = String(date.getDate()).padStart(2, '0');
+    const mes = String(date.getMonth() + 1).padStart(2, '0');
+    const ano = date.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+  }
+
   const CustomTooltip = ({ payload, label }: { payload?: any[]; label?: string; }) => {
     if (payload && payload.length) {
       return (
         <div className="p-2 backdrop-blur-[2px] rounded shadow text-xs border" >
           <div>
-            <b>Data:</b> {label}
+            <b>Data:</b> {formatarData(Number(label))}
           </div>
           <div>
             <b>Variação:</b> {payload[0].value?.toFixed(2)}%
@@ -125,37 +140,6 @@ export default function CarteiraSimulador(): JSX.Element {
     }
     return null;
   };
-
-  function calcularHistoricoCarteira(): void {
-    // Mapeia cada ativo ao seu histórico e percentual
-    const ativosComHistorico = ativos.map(ativo => {
-      const historico1 = historicoStock.find(h =>
-        h.length > 0 && h[0].stock === ativo.ticker
-      );
-      if (!historico1 || historico1.length === 0) return null;
-      const inicial = historico1[0].adjustedClose;
-      return historico1.map(item => ({
-        date: item.date,
-        variacao: ((item.adjustedClose / inicial) - 1) * 100 * (ativo.percentual / 100)
-      }));
-    }).filter(Boolean) as { date: number; variacao: number }[][];
-
-    // Agrupa por data e soma as variações ponderadas
-    const variacoesPorData: { [date: number]: number } = {};
-    ativosComHistorico.forEach(historico => {
-      historico.forEach(({ date, variacao }) => {
-        variacoesPorData[date] = (variacoesPorData[date] || 0) + variacao;
-      });
-    });
-
-    // Transforma em array ordenado por data
-    setHistorico(Object.entries(variacoesPorData)
-      .map(([date, variacaoPercentual]) => ({
-        date: Number(date),
-        variacaoPercentual: variacaoPercentual
-      }))
-      .sort((a, b) => a.date - b.date) as Historico[]);
-  }
 
   const total: number = ativos.reduce((acc, a) => acc + a.percentual, 0);
 
@@ -175,13 +159,6 @@ export default function CarteiraSimulador(): JSX.Element {
       })
       .catch((err) => console.error("Erro ao buscar histórico: ", err));
   }, [ativos]);
-
-  // Chama o cálculo do histórico quando historicoStock for atualizado
-  useEffect(() => {
-    if (historicoStock.length === ativos.length && historicoStock.length > 0) {
-      calcularHistoricoCarteira();
-    }
-  }, [historicoStock]);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6 bg-gray-950 min-h-screen text-white">
@@ -282,7 +259,7 @@ export default function CarteiraSimulador(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={handleAdicionar} disabled={total >= 100}>
+          <Button onClick={handleAdicionar} disabled={total == 100}>
             Analisar carteira
           </Button>
           <p className={`text-sm ${somarDistribuicao() > 100 ? "text-red-500" : "text-gray-400"}`}>
@@ -302,7 +279,7 @@ export default function CarteiraSimulador(): JSX.Element {
         </Card>
       )}
     
-      {historico.length > 0 && (
+      {historicoStock.length > 0 && (
         <Card>
           <CardContent className="p-4">
             <h2 className="text-xl font-semibold mb-4">
@@ -310,7 +287,8 @@ export default function CarteiraSimulador(): JSX.Element {
               <span className="text-sm text-gray-400"> (últimos 3 meses)</span>
             </h2>
             <LineChartHistorico
-              data={historico}
+              historicoStock={historicoStock}
+              ativos={ativos}
               lines={[{
                 dataKey: "variacaoPercentual",
                 name: "Carteira",

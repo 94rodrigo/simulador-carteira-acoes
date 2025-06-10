@@ -6,7 +6,15 @@ import (
 	"net/http"
 	"os"
 	"simulador-carteira-acoes/backend/models"
+	"simulador-carteira-acoes/backend/service"
 )
+
+type CalcularHistoricoRequest struct {
+	Ativos         []service.Ativo             `json:"ativos"`
+	HistoricoStock [][]models.StockInformacoes `json:"historicoStock"`
+	DataInicial    int64                       `json:"dataInicial"`
+	DataFinal      int64                       `json:"dataFinal"`
+}
 
 func getToken() string {
 	return os.Getenv("BRAPI_TOKEN")
@@ -14,8 +22,10 @@ func getToken() string {
 
 // GET /stocklist
 func StockListHandler(w http.ResponseWriter, r *http.Request) {
+	numeroMaximosStockQuery := int64(99999999999999)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	resp, err := http.Get("https://brapi.dev/api/quote/list?sortBy=name&sortOrder=asc&token=" + getToken())
+	url := "https://brapi.dev/api/quote/list?sortBy=name&sortOrder=asc&limit=" + fmt.Sprintf("%d", numeroMaximosStockQuery) + "&token=" + getToken()
+	resp, err := http.Get(url)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Erro ao buscar dados da API externa"))
@@ -89,4 +99,16 @@ func SimularCarteiraHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"historicoStock": historicoStock,
 	})
+}
+
+func CalcularHistoricoHandler(w http.ResponseWriter, r *http.Request) {
+	var req CalcularHistoricoRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	result := service.CalcularHistoricoCarteira(req.Ativos, req.HistoricoStock, req.DataInicial, req.DataFinal)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }

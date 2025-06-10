@@ -12,6 +12,7 @@ func main() {
 	godotenv.Load()
 	http.HandleFunc("/api/stocklist", handlers.StockListHandler)
 	http.HandleFunc("/api/simular", handlers.SimularCarteiraHandler)
+	http.HandleFunc("/calcular-historico", handlers.CalcularHistoricoHandler)
 
 	log.Println("Backend do simulador iniciado na porta 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
