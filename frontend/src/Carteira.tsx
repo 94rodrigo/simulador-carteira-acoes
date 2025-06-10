@@ -12,12 +12,6 @@ type Ativo = {
   percentual: number;
 };
 
-type Historico = {
-  simbolo: string;
-  date: number;
-  variacaoPercentual: number;
-};
-
 type StockListItem = {
   stock: string;
   name: string;
@@ -47,7 +41,7 @@ export default function CarteiraSimulador(): JSX.Element {
   const [historicoStock, setHistoricoStock] = useState<StockInformacoes[][]>([]);
   const [stockList, setStockList] = useState<StockListItem[]>([]);
   const [autocompleteIdx, setAutocompleteIdx] = useState<number | null>(null);
-  const [showSuggestions, setShowSuggestions] = useState<number | null>(null); // armazena o índice do bloco ativo
+  const [showSuggestions, setShowSuggestions] = useState<number | null>(null);
 
   // Carrega tickers do JSON ao montar
   useEffect(() => {
@@ -101,17 +95,17 @@ export default function CarteiraSimulador(): JSX.Element {
 
   // Adiciona todos os blocos válidos como ativos
   const handleAdicionar = (): void => {
+    setAtivos([]); // Limpa a lista de ativos antes de adicionar novos
     const novosAtivos = inputBlocks
-      .filter(b => b.ticker && b.percentual && !ativos.some(a => a.ticker === b.ticker.toUpperCase()))
       .map(b => ({ ticker: b.ticker.toUpperCase(), percentual: parseFloat(b.percentual) }))
       .filter(b => !isNaN(b.percentual) && b.percentual > 0);
     if (novosAtivos.length === 0) return;
     setAtivos((prev) => [...prev, ...novosAtivos]);
-    //setInputBlocks([{ ticker: "", percentual: "" }]);
   };
 
   const somarDistribuicao = (): number => {
-    return parseFloat(inputBlocks.map(inputValor => parseFloat(inputValor.percentual) || 0).reduce((acc, b) => acc + b, 0).toFixed(2));
+    let total = parseFloat(inputBlocks.map(inputValor => parseFloat(inputValor.percentual) || 0).reduce((acc, b) => acc + b, 0).toFixed(2));
+    return total;
   };
 
   // Função utilitária para formatar timestamp (segundos) para dd/MM/yyyy
@@ -140,8 +134,6 @@ export default function CarteiraSimulador(): JSX.Element {
     }
     return null;
   };
-
-  const total: number = ativos.reduce((acc, a) => acc + a.percentual, 0);
 
   useEffect(() => {
     if (ativos.length === 0) return;
@@ -259,7 +251,7 @@ export default function CarteiraSimulador(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={handleAdicionar} disabled={total == 100}>
+          <Button onClick={handleAdicionar} disabled={somarDistribuicao() !== 100}>
             Analisar carteira
           </Button>
           <p className={`text-sm ${somarDistribuicao() > 100 ? "text-red-500" : "text-gray-400"}`}>

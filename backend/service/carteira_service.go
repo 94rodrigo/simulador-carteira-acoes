@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"simulador-carteira-acoes/backend/models"
+	"sort"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ type Ativo struct {
 }
 
 // CalcularHistoricoCarteira consolida o histórico da carteira a partir dos históricos individuais dos ativos e seus percentuais
-func CalcularHistoricoCarteira(ativos []Ativo, historicoStock [][]models.StockInformacoes, dataInicial int64, dataFinal int64) []HistoricoCarteira {
+func CalcularHistoricoCarteira(ativos []Ativo, historicoStock [][]models.StockInformacoes, datasRange []int64) []HistoricoCarteira {
 	// Mapeia cada ativo ao seu histórico e percentual
 	ativosComHistorico := make([][]struct {
 		Date     int
@@ -27,22 +28,28 @@ func CalcularHistoricoCarteira(ativos []Ativo, historicoStock [][]models.StockIn
 
 	for _, ativo := range ativos {
 		historico1 := findHistoricoByTicker(historicoStock, ativo.Ticker)
+		dataInicial := int64(0)
+		dataFinal := int64(0)
 		if len(historico1) == 0 {
 			continue
 		}
-		inicial := historico1[0].AdjustedClose
+
 		ativoHistorico := make([]struct {
 			Date     int
 			Variacao float64
 		}, 0, len(historico1))
 
-		if dataInicial == 0 {
+		if datasRange == nil || len(datasRange) != 2 {
 			dataInicial = int64(historico1[0].Date)
+			dataFinal = int64(historico1[len(historico1)-1].Date)
+		} else {
+			dataInicial = datasRange[0]
+			dataFinal = datasRange[1]
 		}
 
-		if dataFinal == 0 {
-			dataFinal = int64(historico1[len(historico1)-1].Date)
-		}
+		filtrarHistoricoDeAcorodComRangeDatas := filtrarHistoricoDeAcorodComRangeDatas(historico1, []int64{dataInicial, dataFinal})
+
+		inicial := filtrarHistoricoDeAcorodComRangeDatas[0].AdjustedClose
 
 		for _, item := range historico1 {
 			if item.Date < dataInicial || item.Date > dataFinal {
@@ -78,7 +85,9 @@ func CalcularHistoricoCarteira(ativos []Ativo, historicoStock [][]models.StockIn
 		})
 	}
 	// Ordena por data
-	// (pode ser implementado se necessário)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Date < result[j].Date
+	})
 	return result
 }
 
@@ -118,4 +127,18 @@ func ValidarAtivos(ativos []models.Ativo) error {
 		return errors.New("a soma dos percentuais deve ser 100% (atual: " + fmt.Sprintf("%.2f", totalPercentual) + ")")
 	}
 	return nil
+}
+
+func filtrarHistoricoDeAcorodComRangeDatas(stockInformacoesList []models.StockInformacoes, rangeDatas []int64) []models.StockInformacoes {
+	var result []models.StockInformacoes
+	for _, stockInformacoes := range stockInformacoesList {
+		if isStockDentroDoIntervalo(stockInformacoes, rangeDatas) {
+			result = append(result, stockInformacoes)
+		}
+	}
+	return result
+}
+
+func isStockDentroDoIntervalo(stockInformacoes models.StockInformacoes, rangeDatas []int64) bool {
+	return stockInformacoes.Date >= rangeDatas[0] && stockInformacoes.Date <= rangeDatas[1]
 }
